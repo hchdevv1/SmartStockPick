@@ -6,18 +6,20 @@ import { BarcodeItem, ItemDetails } from '../mssql/mssql.entity';
 import { Stockrequest, StrockPickTransactions } from '../postgres/postgres.entity';
 import { TrakcareService } from '../trakcare/trakcare.service';
 
-//import { QueryStockRequestBodyDto, StockRequestListDto } from './dto/query-StockRequestList.dto';
 import { QueryStockRequestByReqNoBodyDto, StockRequestByReqNoDto } from './dto/query-StockRequestByReqNo.dto';
 import { UpdateStrockPickTransactionDto } from './dto/update-StockRequestItem.dto';
 
 // import { QueryBarcodeItemResultBodyDto } from './dto/query-BarcodeItemResult.dto';
-import { ifaceStockRequestResponse } from './interfaces/stock-request.interface';
-import { ifaceStockRequestByReqNoResponse } from './interfaces/stock-requestByReqNo.interface';
-//import { ifaceUpdateStrockPickTransaction } from './interfaces/update-stock-request-item.interface';
+import { ifaceStockRequestResponse, ifaceStockRequestItem } from './interfaces/stock-request.interface';
 import { ifaceQueryStrockNAV } from './interfaces/query-stock-nav.interface';
+import { ifaceResultStockRequestNumberInfo } from './interfaces/result-stockrequestnumber.interface';
+import { ifaceMatchbarcodeRequestItem } from './interfaces/result-matchbarcode-requestItem';
 import { FetchStockRequestDto } from './dto/fetch-stockrequest.dto';
 
-//import { ifaceStockRequestResponse} from './interfaces/stock-request.interface'
+import { MatchBarcodeToStockRequestItemDto } from './dto/fetch-matchbarcode-requestItem.dto';
+
+
+//import { ResultStockRequestByReqNoInfo } from './dto/result-stockrequestItem.dto';
 @Injectable()
 export class StockpickService {
 
@@ -230,88 +232,7 @@ export class StockpickService {
       }
     }
     */
-  async getStockRequestListByRequestNumber(dto: FetchStockRequestDto): Promise<ifaceStockRequestResponse> {
-    try {
-      const xRequestNumber = dto.xRequestNumber;
-      const rawData: ifaceStockRequestResponse =
-        await this.trakcareService.getStockRequestListByRequestNumber(xRequestNumber!);
-      for (const item of rawData.StockRequestInfo) {
-        if (!item.INRQRowId) continue; const inrqrowidNum = parseInt(item.INRQRowId);
-        if (isNaN(inrqrowidNum)) continue;
-        const existing = await this.stockRequestRepo.findOne({
-          where: { inrqrowid: inrqrowidNum },
-        });
-        if (!existing) {
-          const newRecord = this.stockRequestRepo.create({
-            inrqrowid: parseInt(item.INRQRowId),
-            inrqno: item.INRQNo,
-            reqloccode: item.RequestingLocationCode,
-            reqlocdesc: item.RequestingLocationDesc,
-            supplyloccode: item.SupplyingLocationCode,
-            supplylocdesc: item.SupplyingLocationDesc,
-            inrqdate: item.INRQDate,
-          });
-          await this.stockRequestRepo.save(newRecord);
-          //const saved = await this.stockRequestRepo.save(newRecord);
-          //if (saved?.id) {console.log('✅ บันทึกสำเร็จ ID:', saved.id);}
-        }
-      }
-      const inrqnoFilter = rawData.StockRequestInfo[0]?.INRQNo ?? '';
-      const stockRequestList = await this.stockRequestRepo.find({
-        where: { inrqno: inrqnoFilter },
-      });
-      const result: ifaceStockRequestResponse = {
-        StockRequestInfo: stockRequestList.map((item) => ({
-          INRQRowId: item.inrqrowid?.toString(),
-          INRQNo: item.inrqno,
-          RequestingLocationCode: item.reqloccode,
-          RequestingLocationDesc: item.reqlocdesc,
-          SupplyingLocationCode: item.supplyloccode,
-          SupplyingLocationDesc: item.supplylocdesc,
-          INRQDate: item.inrqdate,
-          PickStatusID: item.pickstatusid,
-          PickStatus: item.pickstatus,
-          PickCompleted: item.pickcompleted,
-        })),
-      };
-  if (!result.StockRequestInfo.length){
-       return {
-        StockRequestInfo: [
-          {
-            INRQRowId: "",
-            INRQNo: "",
-            RequestingLocationCode: "",
-            RequestingLocationDesc: "",
-            SupplyingLocationCode: "",
-            SupplyingLocationDesc: "",
-            INRQDate: "",
-            PickStatusID: "",
-            PickStatus: "",
-            PickCompleted: false
-          }
-        ]
-      };
-     }else{ return result;}
-     
-    } catch {
-      return {
-        StockRequestInfo: [
-          {
-            INRQRowId: "",
-            INRQNo: "",
-            RequestingLocationCode: "",
-            RequestingLocationDesc: "",
-            SupplyingLocationCode: "",
-            SupplyingLocationDesc: "",
-            INRQDate: "",
-            PickStatusID: "",
-            PickStatus: "",
-            PickCompleted: false
-          }
-        ]
-      };
-    }
-  }
+
   async getStockRequestList(dto: FetchStockRequestDto): Promise<ifaceStockRequestResponse> {
 
     try {
@@ -368,25 +289,25 @@ export class StockpickService {
           PickCompleted: item.pickcompleted,
         })),
       };
-     if (!result.StockRequestInfo.length){
-       return {
-        StockRequestInfo: [
-          {
-            INRQRowId: "",
-            INRQNo: "",
-            RequestingLocationCode: "",
-            RequestingLocationDesc: "",
-            SupplyingLocationCode: "",
-            SupplyingLocationDesc: "",
-            INRQDate: "",
-            PickStatusID: "",
-            PickStatus: "",
-            PickCompleted: false
-          }
-        ]
-      };
-     }else{ return result;}
-     
+      if (!result.StockRequestInfo.length) {
+        return {
+          StockRequestInfo: [
+            {
+              INRQRowId: "",
+              INRQNo: "",
+              RequestingLocationCode: "",
+              RequestingLocationDesc: "",
+              SupplyingLocationCode: "",
+              SupplyingLocationDesc: "",
+              INRQDate: "",
+              PickStatusID: "",
+              PickStatus: "",
+              PickCompleted: false
+            }
+          ]
+        };
+      } else { return result; }
+
     } catch {
       return {
         StockRequestInfo: [
@@ -406,28 +327,20 @@ export class StockpickService {
       };
     }
   }
-  /*
-  async getStockRequestRequestnumber(xINRQRowId:string): Promise<ifaceStockRequestResponse> {
-
+  async getStockRequestListByRequestNumber(dto: FetchStockRequestDto): Promise<ifaceStockRequestResponse> {
     try {
-
-     const rawData: ifaceStockRequestByReqNoResponse = await this.trakcareService.getStockRequestByReqNo(
-        xINRQRowId
-
-      );
-      //console.log(rawData)
-
-      for (const item of rawData.StockRequestByReqNoInfo) {
-        if (!item.INRQRowId) continue;
-        const inrqrowidNum = parseInt(item.INRQRowId);
+      const xRequestNumber = dto.xRequestNumber;
+      const rawData: ifaceStockRequestResponse =
+        await this.trakcareService.getStockRequestListByRequestNumber(xRequestNumber!);
+      for (const item of rawData.StockRequestInfo) {
+        if (!item.INRQRowId) continue; const inrqrowidNum = parseInt(item.INRQRowId);
         if (isNaN(inrqrowidNum)) continue;
-
         const existing = await this.stockRequestRepo.findOne({
           where: { inrqrowid: inrqrowidNum },
         });
         if (!existing) {
           const newRecord = this.stockRequestRepo.create({
-            inrqrowid: inrqrowidNum,
+            inrqrowid: parseInt(item.INRQRowId),
             inrqno: item.INRQNo,
             reqloccode: item.RequestingLocationCode,
             reqlocdesc: item.RequestingLocationDesc,
@@ -435,17 +348,36 @@ export class StockpickService {
             supplylocdesc: item.SupplyingLocationDesc,
             inrqdate: item.INRQDate,
           });
-          await this.stockRequestByReqNoRepo.save(newRecord);
+          await this.stockRequestRepo.save(newRecord);
+          //const saved = await this.stockRequestRepo.save(newRecord);
+          //if (saved?.id) {console.log('✅ บันทึกสำเร็จ ID:', saved.id);}
         }
       }
-/*
-      const inrqrowids = rawData.StockRequestByReqNoInfo
-        .map((item) => parseInt(item.INRQRowId ?? '0'))
-        .filter((id) => !isNaN(id));
-
-      const stockRequestList = await this.stockRequestByReqNoRepo.find({
-        where: { inrqrowid: In(inrqrowids) },
+      const inrqnoFilter = rawData.StockRequestInfo[0]?.INRQNo ?? '';
+      const stockRequestList = await this.stockRequestRepo.find({
+        where: { inrqno: inrqnoFilter },
       });
+      /*
+      
+          const mappedList = stockRequestList.map((item) => ({
+            INRQRowId: item.inrqrowid?.toString(),
+            INRQNo: item.inrqno,
+            RequestingLocationCode: item.reqloccode,
+            RequestingLocationDesc: item.reqlocdesc,
+            SupplyingLocationCode: item.supplyloccode,
+            SupplyingLocationDesc: item.supplylocdesc,
+            INRQDate: item.inrqdate,
+            PickStatusID: item.pickstatusid,
+            PickStatus: item.pickstatus,
+            PickCompleted: item.pickcompleted,
+          }));
+      
+          return {
+            StockRequestInfo: mappedList.length > 0 ? mappedList : [this.emptyStockRequest()],
+          };
+      
+            */
+
 
       const result: ifaceStockRequestResponse = {
         StockRequestInfo: stockRequestList.map((item) => ({
@@ -462,119 +394,313 @@ export class StockpickService {
         })),
       };
 
-const result =''
-      return result;
+      if (!result.StockRequestInfo.length) {
+        return {
+          StockRequestInfo: [
+            {
+              INRQRowId: "",
+              INRQNo: "",
+              RequestingLocationCode: "",
+              RequestingLocationDesc: "",
+              SupplyingLocationCode: "",
+              SupplyingLocationDesc: "",
+              INRQDate: "",
+              PickStatusID: "",
+              PickStatus: "",
+              PickCompleted: false
+            }
+          ]
+        };
+      } else { return result; }
+
     } catch {
       return {
-        /*StockRequestByReqNoInfo: [
+        StockRequestInfo: [
           {
             INRQRowId: "",
-            INRQIRowId: "",
             INRQNo: "",
             RequestingLocationCode: "",
             RequestingLocationDesc: "",
             SupplyingLocationCode: "",
             SupplyingLocationDesc: "",
-            ByUserName: "",
-            Status: "",
             INRQDate: "",
-            INRQTime: "",
-            ItemCode: "",
-            ItemDesc: "",
-            UOM: "",
-            ReqQty: "",
-            PickByCode: "",
-            PickByName: "",
+            PickStatusID: "",
             PickStatus: "",
-            isMedicine: ""
+            PickCompleted: false
           }
         ]
       };
-    
+    }
   }
-  */
-
-  async getStockRequestByReqNo(xINRQRowId: string): Promise<QueryStockRequestByReqNoBodyDto> {
+  async getStockRequestByReqNo(xINRQRowId: string): Promise<ifaceResultStockRequestNumberInfo> {
     try {
-      const rawData: ifaceStockRequestByReqNoResponse = await this.trakcareService.getStockRequestByReqNo(
-        xINRQRowId
 
+      const existingStockRequest = await this.stockRequestRepo.findOne({
+        where: { inrqrowid: parseInt(xINRQRowId) },
+      });
+
+      const existingStockRequestByReqNo = await this.stockRequestByReqNoRepo.find({
+        where: { inrqrowid: parseInt(xINRQRowId) },
+      });
+
+      if (existingStockRequestByReqNo.length > 0) {
+        const Result: StockRequestByReqNoDto[] = existingStockRequestByReqNo.map((item) => ({
+          INRQRowId: item.inrqrowid?.toString() ?? '',
+          INRQIRowId: item.inrqirowid ?? '',
+          INRQNo: item.inrqno ?? '',
+          RequestingLocationCode: item.reqloccode ?? '',
+          RequestingLocationDesc: item.reqlocdesc ?? '',
+          SupplyingLocationCode: item.supplyloccode ?? '',
+          SupplyingLocationDesc: item.supplylocdesc ?? '',
+          INRQDate: item.inrqdate ?? '',
+          INRQTime: item.inrqtime ?? '',
+          ItemCode: item.trakcareitemcode ?? '',
+          ItemDesc: item.trakcareitemdesc ?? '',
+          UOM: item.uom ?? '',
+          ReqQty: item.qty ?? '',
+          BarCodeStock: item.barcodestock ?? '',
+          PickByCode: item.pickbycode ?? '',
+          PickByName: item.pickbyname ?? '',
+          PickStatusId: item.pickstatusid,
+          PickStatus: item.pickstatus ?? '',
+          isMedicine: item.ismedicine ?? '',
+        }));
+
+        return {
+          StockRequestNumberStatus: {
+            statusCode: parseInt(existingStockRequest?.pickstatusid ?? '0'),
+            statusDesc: existingStockRequest?.pickstatus ?? 'Pendings.',
+          },
+          StockRequestByReqNoInfo: Result,
+        };
+      }
+      const rawData: QueryStockRequestByReqNoBodyDto = await this.trakcareService.getStockRequestByReqNo(xINRQRowId);
+      const items = rawData.StockRequestByReqNoInfo ?? [];
+      const validItems = items.filter((item) => !!item.INRQIRowId);
+      const newEntities = validItems.map((dto) =>
+        this.stockRequestByReqNoRepo.create({
+          inrqrowid: dto.INRQRowId ? parseInt(dto.INRQRowId) : undefined,
+          inrqirowid: dto.INRQIRowId,
+          inrqno: dto.INRQNo,
+          reqloccode: dto.RequestingLocationCode,
+          reqlocdesc: dto.RequestingLocationDesc,
+          supplyloccode: dto.SupplyingLocationCode,
+          supplylocdesc: dto.SupplyingLocationDesc,
+          inrqdate: dto.INRQDate,
+          inrqtime: dto.INRQTime,
+          trakcareitemcode: dto.ItemCode,
+          trakcareitemdesc: dto.ItemDesc,
+          uom: dto.UOM,
+          qty: dto.ReqQty,
+          ismedicine: dto.isMedicine,
+          created_at: new Date(),
+          updated_at: new Date(),
+        }),
       );
-      //console.log(rawData)
+      const savedEntities = await this.stockRequestByReqNoRepo.save(newEntities);
+      const Result: StockRequestByReqNoDto[] = savedEntities.map((item) => ({
+        INRQRowId: item.inrqrowid?.toString() ?? '',
+        INRQIRowId: item.inrqirowid ?? '',
+        INRQNo: item.inrqno ?? '',
+        RequestingLocationCode: item.reqloccode ?? '',
+        RequestingLocationDesc: item.reqlocdesc ?? '',
+        SupplyingLocationCode: item.supplyloccode ?? '',
+        SupplyingLocationDesc: item.supplylocdesc ?? '',
+        INRQDate: item.inrqdate ?? '',
+        INRQTime: item.inrqtime ?? '',
+        ItemCode: item.trakcareitemcode ?? '',
+        ItemDesc: item.trakcareitemdesc ?? '',
+        UOM: item.uom ?? '',
+        ReqQty: item.qty ?? '',
+        BarCodeStock: item.barcodestock ?? '',
+        PickByCode: item.pickbycode ?? '',
+        PickByName: item.pickbyname ?? '',
+        PickStatusId: item.pickstatusid,
+        PickStatus: item.pickstatus ?? '',
+        isMedicine: item.ismedicine ?? '',
+      }));
+      return {
+        StockRequestNumberStatus: {
+          statusCode: parseInt(existingStockRequest?.pickstatusid ?? '0'),
+          statusDesc: existingStockRequest?.pickstatus ?? 'Pendings',
+        },
+        StockRequestByReqNoInfo: Result,
+      };
 
-      const resultDto = new QueryStockRequestByReqNoBodyDto();
-      resultDto.StockRequestByReqNoInfo = [];
+    } catch {
+      return {
+        StockRequestNumberStatus: {
+          statusCode: 0,
+          statusDesc: 'Pending',
+        },
+        StockRequestByReqNoInfo: [
+          {
+            INRQRowId: '',
+            INRQIRowId: '',
+            INRQNo: '',
+            RequestingLocationCode: '',
+            RequestingLocationDesc: '',
+            SupplyingLocationCode: '',
+            SupplyingLocationDesc: '',
+            INRQDate: '',
+            INRQTime: '',
+            ItemCode: '',
+            ItemDesc: '',
+            UOM: '',
+            ReqQty: '',
+            BarCodeStock: '',
+            PickByCode: '',
+            PickByName: '',
+            PickStatusId: 0,
+            PickStatus: '',
+            isMedicine: '',
+          }
+        ],
+      };
 
-      for (const item of rawData.StockRequestByReqNoInfo) {
-        const dto = new StockRequestByReqNoDto();
+    }
+  }
+  async matchBarcodeToStockRequestItem(dto: MatchBarcodeToStockRequestItemDto): Promise<ifaceMatchbarcodeRequestItem> {
+    try {
 
-        dto.INRQRowId = item.INRQRowId; //parseInt(item.INRQRowId);
-        dto.INRQIRowId = item.INRQIRowId;
-        dto.INRQNo = item.INRQNo;
-        dto.RequestingLocationCode = item.RequestingLocationCode;
-        dto.RequestingLocationDesc = item.RequestingLocationDesc;
-        dto.SupplyingLocationCode = item.SupplyingLocationCode;
-        dto.SupplyingLocationDesc = item.SupplyingLocationDesc;
-        dto.ByUserName = item.ByUserName;
-        dto.Status = item.Status;
-        dto.INRQDate = item.INRQDate;
-        dto.INRQTime = item.INRQTime;
-        dto.ItemCode = item.ItemCode;
-        dto.ItemDesc = item.ItemDesc;
-        dto.UOM = item.UOM;
-        dto.ReqQty = item.ReqQty;
-        dto.isMedicine = item.isMedicine;
-        dto.PickByCode = item.PickByCode || '';
-        dto.PickByName = item.PickByName || '';
-        dto.PickStatus = item.PickStatus || 'XX';
-        console.log(item)
+      console.log('step 1 found item NAV')
+      if (dto.xBarcodeText) {
 
-        //console.log(dto)
-        if (dto.INRQRowId && dto.INRQIRowId) {
-          const isExist = await this.stockRequestByReqNoRepo.findOne({
-            where: { inrqirowid: dto.INRQIRowId },
+        const result: ifaceQueryStrockNAV[] = await this.barcodeRepo.query(
+          `SELECT 
+              barcode.[Barcode Text] AS barcodeText,
+              itemDetails.[No_ 2] AS itemNo2
+           FROM 
+              [HCH_BC220TEST_20250121].[dbo].[HCH-PRODGolive$Item$d2ee3ee2-4127-4b41-8c2e-513ec083665e] AS barcode
+           INNER JOIN
+              [HCH_BC220TEST_20250121].[dbo].[HCH-PRODGolive$Item$437dbf0e-84ff-417a-965d-ed2bb9650972] AS itemDetails
+             ON barcode.[No_] = itemDetails.[No_]
+           WHERE 
+              barcode.[Barcode Text] = @0`,
+          [dto.xBarcodeText],
+        );
+
+        if (!result?.length || !result[0].itemNo2) {
+          console.log('2. item NAV not found')
+          return {
+            INRQRowId: parseInt(dto.xINRQRowId || ''),
+            barcodeText: '',
+            itemNo2: '',
+            status: 'not found',
+          };
+        } else {
+          console.log('2. next step find item in transaction')
+          const xinrqRowId = dto.xINRQRowId ?? '0'
+           await this.stockRequestByReqNoRepo.find({
+            where: {
+              inrqrowid: parseInt(xinrqRowId),//parseInt(dto.xINRQRowId || '0'),
+              trakcareitemcode: result[0].itemNo2,
+            },
           });
-          //console.log(isExist)
+          console.log('3. next step update status in transaction')
+          await this.stockRequestByReqNoRepo
+            .createQueryBuilder()
+            .update()
+            .set({
+              pickstatusid: 3,
+              pickstatus: 'Completed',
+              pickbycode: dto.xPickbyCode,
+              pickbyname: dto.xPickbyName,
+            })
+            .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
+            .andWhere("trakcareitemcode = :itemcode", { itemcode: result[0].itemNo2 })
+            .execute();
+          console.log('4. next step count ismedicine transaction')
+          const countIsMedicine = await this.stockRequestByReqNoRepo
+            .createQueryBuilder("spt")
+            .where("spt.inrqrowid = :inrqrowid", { inrqrowid: parseInt(xinrqRowId) })
+            .andWhere("spt.ismedicine = :ismedicine", { ismedicine: 'Y' })
+            .andWhere("spt.pickstatusid <> :completed", { completed: 3 })
+            .getCount();
+          console.log(countIsMedicine)
+          if (countIsMedicine === 0) {
+            const nonMedicineUnpickedCount = await this.stockRequestByReqNoRepo
+              .createQueryBuilder("spt")
+              .where("spt.inrqrowid = :inrqrowid", { inrqrowid: parseInt(xinrqRowId) })
+              .andWhere("spt.ismedicine <> :ismedicine", { ismedicine: 'Y' })
+              .andWhere("spt.pickstatusid <> :completed", { completed: 3 })
+              .getCount();
+            if (!nonMedicineUnpickedCount || nonMedicineUnpickedCount === 0) {
+              await this.stockRequestRepo
+                .createQueryBuilder()
+                .update()
+                .set({
+                  pickstatusid: 3,
+                  pickstatus: 'Completed',
+                })
+                .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
+                .execute();
 
-          //dto.BarCodeStock =isExist?.barcodestock
-          //dto.PickStatus =isExist?.pickstatus
-          resultDto.StockRequestByReqNoInfo.push(dto);
-          if (!isExist) {
-
-            const newRecord = this.stockRequestByReqNoRepo.create({
-
-              inrqrowid: parseInt(dto.INRQRowId),
-              inrqirowid: dto.INRQIRowId,
-              inrqno: dto.INRQNo,
-              reqloccode: dto.RequestingLocationCode,
-              reqlocdesc: dto.RequestingLocationDesc,
-              supplyloccode: dto.SupplyingLocationCode,
-              supplylocdesc: dto.SupplyingLocationDesc,
-              inrqdate: dto.INRQDate,
-              inrqtime: dto.INRQTime,
-              trakcareitemcode: dto.ItemCode,
-              trakcareitemdesc: dto.ItemDesc,
-              uom: dto.UOM,
-              qty: dto.ReqQty,
-              created_at: new Date(),
-              updated_at: new Date(),
-              ismedicine: dto.isMedicine
-            });
-
-            await this.stockRequestByReqNoRepo.save(newRecord); // บันทึกลง DB
-
+            }else{
+               await this.stockRequestRepo
+                .createQueryBuilder()
+                .update()
+                .set({
+                  pickstatusid: 1,
+                  pickstatus: 'Pending',
+                })
+                .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
+                .execute();
+            }
+          } else { 
+                 await this.stockRequestRepo
+                .createQueryBuilder()
+                .update()
+                .set({
+                  pickstatusid: 2,
+                  pickstatus: 'In Progess',
+                })
+                .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
+                .execute();
 
           }
         }
+       
+        return {
+          // สมมุติค่าที่ได้จาก logic
+          INRQRowId: parseInt(dto.xINRQRowId ?? '0'),
 
+          barcodeText: result[0].barcodeText||'',
+          itemNo2: result[0].itemNo2,
+          status: 'Completed',
+        };
+      } else {
+        return {
+          INRQRowId: 0,
+          barcodeText: '',
+          itemNo2: '',
+          status: '',
+        };
       }
-      // console.log(resultDto)
 
-      return resultDto;
 
-    } catch (error) {
-      console.error('getStockRequestList error:', error);
-      throw error;
+    } catch  {
+      return {
+        INRQRowId: 0,
+        barcodeText: '',
+        itemNo2: '',
+        status: '',
+      };
     }
+  }
+
+  private emptyStockRequest(): ifaceStockRequestItem {
+    return {
+      INRQRowId: '',
+      INRQNo: '',
+      RequestingLocationCode: '',
+      RequestingLocationDesc: '',
+      SupplyingLocationCode: '',
+      SupplyingLocationDesc: '',
+      INRQDate: '',
+      PickStatusID: '',
+      PickStatus: '',
+      PickCompleted: false,
+    };
   }
 }

@@ -1,14 +1,31 @@
 import { IsInt, IsString, IsOptional, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class QueryStockRequestByReqNoBodyDto {
+export class ResultStockRequestByReqNoInfo {
+  @ValidateNested()
+  @Type(() => StockRequestNumberStatus)
+  @IsOptional()
+  StockRequestNumberStatus?: StockRequestNumberStatus;
 
-    @ValidateNested({ each: true })
-    @Type(() => StockRequestByReqNoDto)
-    @IsOptional()
-    StockRequestByReqNoInfo?: StockRequestByReqNoDto[];
+  @ValidateNested({ each: true })
+  @Type(() => StockRequestByReqNoDto)
+  @IsOptional()
+  StockRequestByReqNoInfo?: StockRequestByReqNoDto[];
 }
-export class StockRequestByReqNoDto {
+
+class StockRequestNumberStatus {
+  
+    @IsInt()
+    @IsOptional()
+    statusCode?: number
+    
+  @IsString()
+  @IsOptional()
+  statusDesc?: string;
+}
+
+
+class StockRequestByReqNoDto {
 
 
     @IsInt()
@@ -39,7 +56,6 @@ export class StockRequestByReqNoDto {
     @IsOptional()
     SupplyingLocationDesc?: string;
 
-
     @IsString()
     @IsOptional()
     INRQDate?: string;
@@ -68,18 +84,19 @@ export class StockRequestByReqNoDto {
     @IsOptional()
     BarCodeStock?: string;
 
-     @IsString()
+    @IsString()
     @IsOptional()
     PickByCode?: string;
 
-     @IsString()
+    @IsString()
     @IsOptional()
     PickByName?: string;
-     @IsInt()
+    
+    @IsInt()
     @IsOptional()
     PickStatusId?: number
 
-     @IsString()
+    @IsString()
     @IsOptional()
     PickStatus?: string;
 

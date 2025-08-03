@@ -2,7 +2,7 @@
 import {   IsString ,IsOptional} from 'class-validator';
 
 
-export class FetchStockRequestDto{
+export class MatchBarcodeToStockRequestItemDto{
     
     @IsString()
     @IsOptional()
@@ -19,4 +19,8 @@ export class FetchStockRequestDto{
     @IsString()
     @IsOptional()
     xRequestNumber?: string;
+    
+    @IsString()
+    @IsOptional()
+    xBarcodeText?: string;
   }

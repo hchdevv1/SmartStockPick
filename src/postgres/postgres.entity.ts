@@ -82,8 +82,8 @@ export class StrockPickTransactions {
     @Column({ name: 'pickbyname', type: 'text' })
     pickbyname?: string;
     
-    @Column({ name: 'pickstatusid', type: 'text' })
-    pickstatusid?: string;
+    @Column({ name: 'pickstatusid', type: 'int' })
+    pickstatusid?: number;
     @Column({ name: 'pickstatus', type: 'text' })
     pickstatus?: string;
     @Column({ name: 'pickdate', type: 'text' })

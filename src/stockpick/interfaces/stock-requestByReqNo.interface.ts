@@ -16,10 +16,10 @@ export interface ifaceStockRequestByReqNoItem {
   ReqQty: string;
   UserCompleted?: string;
   isMedicine: string;
-  
   BarCodeStock?: string;
   PickByCode?: string;
   PickByName?: string;
+  PickStatusId?: number;
   PickStatus?: string;
 
 
