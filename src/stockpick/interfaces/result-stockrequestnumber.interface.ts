@@ -28,4 +28,5 @@ export interface StockRequestByReqNoDto {
   PickStatusId?: number;
   PickStatus?: string;
   isMedicine?: string;
+  BINNo?: string;
 }

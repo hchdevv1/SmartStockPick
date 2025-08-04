@@ -464,6 +464,7 @@ export class StockpickService {
           PickStatusId: item.pickstatusid,
           PickStatus: item.pickstatus ?? '',
           isMedicine: item.ismedicine ?? '',
+          BINNo :''
         }));
 
         return {
@@ -554,6 +555,7 @@ export class StockpickService {
             PickStatusId: 0,
             PickStatus: '',
             isMedicine: '',
+            BINNo:''
           }
         ],
       };

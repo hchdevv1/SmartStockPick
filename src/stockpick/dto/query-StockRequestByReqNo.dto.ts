@@ -87,4 +87,8 @@ export class StockRequestByReqNoDto {
     @IsOptional()
     isMedicine?: string;
 
+    @IsString()
+    @IsOptional()
+    BINNo?: string;
+
 }
