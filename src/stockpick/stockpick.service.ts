@@ -2,8 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import { firstValueFrom } from 'rxjs';
+
 import { BarcodeItem, ItemDetails } from '../mssql/mssql.entity';
-import { Stockrequest, StrockPickTransactions } from '../postgres/postgres.entity';
+import { Stockrequest, StrockPickTransactions, StockTransferEntity, StockTransferPickEntity } from '../postgres/postgres.entity';
 import { TrakcareService } from '../trakcare/trakcare.service';
 
 import { QueryStockRequestByReqNoBodyDto, StockRequestByReqNoDto } from './dto/query-StockRequestByReqNo.dto';
@@ -18,12 +21,24 @@ import { FetchStockRequestDto } from './dto/fetch-stockrequest.dto';
 
 import { MatchBarcodeToStockRequestItemDto } from './dto/fetch-matchbarcode-requestItem.dto';
 
+import { StockTransferQueryDto } from './dto/stock-transfer-query.dto';
+import { ApiStockTransferResponse, ApiStockTransfer } from './interfaces/stock-transfer.interface';
+import { ApiStockTransferPickResponse } from './interfaces/stock-transfer-pick.interface';
+import { BarcodestockMatchedDto } from './dto/barcodestock-matched.dto';
+import { BarcodestockUpdateDto } from './dto/barcodestock-update.dto';
+import { LocationListResponse } from './interfaces/location-interface';
+import { UserLogonQueryDto } from './dto/user-logon.dto';
+import { ApiUserLogonResponse } from './interfaces/user-logon.interface';
 
+import axios from 'axios';
+import { AxiosResponse } from 'axios';
 //import { ResultStockRequestByReqNoInfo } from './dto/result-stockrequestItem.dto';
 @Injectable()
 export class StockpickService {
+  private readonly trakcareApiUrl: string;
 
   constructor(
+
     private readonly httpService: HttpService,
     private readonly trakcareService: TrakcareService,
 
@@ -38,7 +53,374 @@ export class StockpickService {
     @InjectRepository(StrockPickTransactions, 'postgresConn')
     private readonly stockRequestByReqNoRepo: Repository<StrockPickTransactions>,
 
-  ) { }
+    @InjectRepository(StockTransferEntity, 'postgresConn')
+    private readonly repo: Repository<StockTransferEntity>,
+    @InjectRepository(StockTransferPickEntity, 'postgresConn')
+    private readonly stocktransferPickRepo: Repository<StockTransferPickEntity>,
+
+    private readonly configService: ConfigService
+  ) { this.trakcareApiUrl = this.configService.get<string>('TRAKCARE_APIURL')!; }
+  //#region stocktransfer
+  async processStockTransfers(query: StockTransferQueryDto) {
+    const apiResponse = await this.callApi(query);
+
+    for (const item of apiResponse.StockTransferInfo) {
+      await this.saveToDatabase(item);
+    }
+
+    return apiResponse;
+  }
+  private async callApi(query: StockTransferQueryDto): Promise<ApiStockTransferResponse> {
+
+    let url = '';
+
+    if (query.transferNo) {
+      url = `${this.trakcareApiUrl}/StockTransferListByTransferNumber/${query.transferNo}`;
+
+    } else if (query.locationCode) {
+      url = `${this.trakcareApiUrl}/StockTransferListByLocation/${query.dateFrom}/${query.dateTo}/${query.locationCode}`;
+
+    } else {
+      url = `${this.trakcareApiUrl}/StockTransferListAllLocation/${query.dateFrom}/${query.dateTo}`;
+
+    }
+    const { data } = await axios.get<ApiStockTransferResponse>(url);
+    return data;
+  }
+  private async saveToDatabase(apiItem: ApiStockTransfer) {
+    const existed = await this.repo.findOne({
+      where: { initrowid: apiItem.INITRowId },
+    });
+
+    if (existed) return;
+
+    const entity = this.repo.create({
+      initrowid: apiItem.INITRowId,
+      initno: apiItem.INITNo,
+      inrqrowid: apiItem.INRQRowId,
+      inrqno: apiItem.INRQNo,
+      reqloccode: apiItem.RequestingLocationCode,
+      reqlocdesc: apiItem.RequestingLocationDesc,
+      supplyloccode: apiItem.SupplyingLocationCode,
+      supplylocdesc: apiItem.SupplyingLocationDesc,
+      initdate: apiItem.INITDate,
+      pickcompleted: apiItem.TransferComplete,
+    });
+
+    await this.repo.save(entity);
+  }
+  async processStockTransferPick(TransferNumber: string) {
+    const url = `${this.trakcareApiUrl}/StockTransferOrder/${TransferNumber}`;
+
+    const response$ = this.httpService.get<ApiStockTransferPickResponse>(url);
+    const { data } = await firstValueFrom(response$);
+
+    const result = [];
+    for (const item of data.StockTransferInfo) {
+      const barcodeText = await this.findBarcodeByStockItemCode(item.StockItemCode);
+      const existing = await this.stocktransferPickRepo.findOne({
+        where: { transfernumber: item.TransferNumber, initirowid: item.INITIRowId },
+      });
+      if (!existing) {
+        const entity = this.stocktransferPickRepo.create([{
+          initrowid: item.INITRowId,
+          transfernumber: item.TransferNumber,
+          inrqrowid: item.INRQRowId,
+          requestnumber: item.RequestNumber,
+          initirowid: item.INITIRowId,
+          initiinclbdr: item.INITIINCLBDR,
+          stockitemcode: item.StockItemCode,
+          stockitemdesc: item.StockItemDesc,
+          bin: item.BIN,
+          uom: item.UOM,
+          batchqty: item.BatchQty,
+          transferqty: item.TransferQty,
+          requestqty: item.RequestQty,
+          batch: item.Batch,
+          batchexpirydate: item.BatchExpiryDate,
+          transfercomplete: item.TransferComplete,
+          ismedicine: item.IsMedicine,
+          barcodestock: `${barcodeText}`
+
+
+        }]);
+        if (item.INITRowId) {
+          await this.stocktransferPickRepo.save(entity);
+        }
+
+        result.push(entity);
+      } else {
+        result.push(existing);
+      }
+    }
+
+    return { StockTransferInfo: result };
+  }
+  private async findBarcodeByStockItemCode(stockItemCode: string): Promise<string | null> {
+    if (!stockItemCode) return null;
+
+    // ใช้ raw query builder เพื่อ join ชื่อ column ที่มี space ได้สะดวก
+    // Entity mapping มี column names ดังเดิม (เช่น "No_" และ "Barcode Text", "No_ 2")
+    const qb = this.itemDetailsRepo.createQueryBuilder('item')
+      .innerJoin(BarcodeItem, 'barcode', `barcode."No_" = item."No_"`)
+      .where(`item."No_ 2" = :code`, { code: stockItemCode })
+      .select(`barcode."Barcode Text"`, 'barcodeText')
+      .limit(1);
+
+    const raw = await qb.getRawOne<{ barcodeText?: string }>();
+    return raw?.barcodeText ?? null;
+  }
+
+  async getMissingBarcodeByTransferNumber(transferNumber: string) {
+    const items = await this.stocktransferPickRepo.find({
+      select: ['stockitemcode', 'stockitemdesc', 'barcodestock'],
+      where: {
+        transfernumber: transferNumber,
+        barcodestock: In(['', null]),  // รวม empty string และ null
+      },
+    });
+
+    return { StockTransferInfo: items };
+  }
+
+  async processBarcodeMatched(dto: BarcodestockMatchedDto) {
+
+    const { transferNo, barcodestock, pickbycode, pickbyname, pickdate, picktime } = dto;
+
+    let statusmatch =''
+
+    const existing = await this.stocktransferPickRepo.findOne({
+      where: { transfernumber: transferNo, barcodestock: barcodestock }
+
+    });
+    console.log(dto)
+    if (existing) {
+      statusmatch='Complete'
+      // 2️⃣ Update record ที่ match
+      await this.stocktransferPickRepo.update(
+        { transfernumber: transferNo, barcodestock: barcodestock },
+        {
+          pickbycode: pickbycode,
+          pickbyname: pickbyname,
+          pickdate: pickdate,
+          picktime: picktime,
+          pickstatusid: '3',
+          pickstatus: 'Done',
+          updated_at: () => 'NOW()',
+        },
+      );
+
+    }else{
+       statusmatch='Not found'
+    }
+
+    const { count } = await this.stocktransferPickRepo
+      .createQueryBuilder('p')
+      .where('p.transfernumber = :transferNo', { transferNo })
+      .andWhere('p.ismedicine = :isMed', { isMed: 'Y' })
+      .andWhere('(p.pickstatusid IS NULL OR p.pickstatusid = \'\')')
+      .select('COUNT(p.initrowid)', 'count')
+      .getRawOne();
+
+    const remainingCount = Number(count);
+
+    if (remainingCount === 0) {
+      await this.stocktransferPickRepo.update(
+        { transfernumber: transferNo },
+        {
+          pickstatusid: '3',
+          pickstatus: 'Done',
+          updated_at: () => 'NOW()',
+        },
+      );
+      await this.repo.update(
+        { initno: transferNo },
+        {
+          pickstatusid: '3',
+          pickstatus: 'Done',
+          updated_at: () => 'NOW()',
+        },
+      );
+    }
+
+    const items = await this.stocktransferPickRepo.find({
+      where: { transfernumber: transferNo },
+      select: [
+        'initrowid',
+        'transfernumber',
+        'inrqrowid',
+        'requestnumber',
+        'initirowid',
+        'initiinclbdr',
+        'stockitemcode',
+        'stockitemdesc',
+        'bin',
+        'uom',
+        'batchqty',
+        'transferqty',
+        'requestqty',
+        'batch',
+        'batchexpirydate',
+        'transfercomplete',
+        'barcodestock',
+        'pickbycode',
+        'pickbyname',
+        'pickstatusid',
+        'pickstatus',
+        'pickdate',
+        'picktime',
+        'ismedicine',
+      ],
+    });
+
+    /*
+    // 1️⃣ Update record ที่ match transfernumber + barcodestock
+    await this.stocktransferPickRepo.update(
+      { transfernumber, barcodestock },
+      {
+        pickbycode,
+        pickbyname,
+        pickdate,
+        picktime,
+        pickstatusid: '3',
+        pickstatus: 'Done',
+        updated_at: () => 'NOW()',
+      },
+    );
+
+    // 2️⃣ ตรวจสอบว่ายา (ismedicine='Y') ที่ยัง pickstatusid=1 ยังมีอยู่ไหม
+    const remainingCount = await this.stocktransferPickRepo.count({
+      where: { transfernumber, ismedicine: 'Y', pickstatusid: '1' },
+    });
+
+    // 3️⃣ ถ้าไม่มีเหลือ → update pickstatus ของ transfer ทั้งหมด
+    if (remainingCount === 0) {
+      await this.stocktransferPickRepo.update(
+        { transfernumber },
+        { pickstatusid: '3', pickstatus: 'Done', updated_at: () => 'NOW()' },
+      );
+    }
+
+    // 4️⃣ query item ทั้งหมดของ transfer เพื่อ return
+    const items = await this.stocktransferPickRepo.find({
+      where: { transfernumber },
+      select: [
+        'initrowid',
+        'transfernumber',
+        'inrqrowid',
+        'requestnumber',
+        'initirowid',
+        'initiinclbdr',
+        'stockitemcode',
+        'stockitemdesc',
+        'bin',
+        'uom',
+        'batchqty',
+        'transferqty',
+        'requestqty',
+        'batch',
+        'batchexpirydate',
+        'transfercomplete',
+        'barcodestock',
+        'pickbycode',
+        'pickbyname',
+        'pickstatusid',
+        'pickstatus',
+        'pickdate',
+        'picktime',
+        'ismedicine',
+      ],
+    });
+    */
+
+    return { Status:statusmatch, StockTransferInfo: items };
+  }
+
+async updateBarcodestock(dto: BarcodestockUpdateDto) {
+  const { transfernumber,stockitemcode, barcodestock } = dto;
+  console.log(dto)
+  const itemDetail = await this.itemDetailsRepo.findOne({
+    where: { no2: stockitemcode }
+  });
+
+  let updateStatus = '';
+  let navNo = '';
+  let navNo2 = '';
+
+  
+  if (itemDetail?.no) {
+    navNo = itemDetail.no;     // Nav field
+    navNo2 = itemDetail.no2??'';   // Nav2 field
+
+    await this.barcodeRepo.update(
+      { no: itemDetail.no },
+      { barcodeText: barcodestock }
+    );
+
+    updateStatus = 'SUCCESS';
+  } else {
+    updateStatus = 'NOT_FOUND';
+  }
+
+  return {
+    UpdateStatus: {
+      stockitemcode,
+      barcodestock,
+      NavNo: navNo ?? '',
+      NavNo2: navNo2 ?? '',
+      status: updateStatus
+    }
+  };
+}
+
+  async getLocation(): Promise<LocationListResponse> {
+    const url = `${this.trakcareApiUrl}/LocationList/`;
+    try {
+      const response: AxiosResponse<LocationListResponse> = await firstValueFrom(
+        this.httpService.get<LocationListResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockRequestList:', error.message);
+      } else {
+        console.error('Error fetching StockRequestList:', error);
+      }
+      throw new Error('Unable to fetch StockRequestList from external API');
+    }
+  }
+  async getStockLocation(): Promise<LocationListResponse> {
+    const url = `${this.trakcareApiUrl}/StockLocationList/`;
+    try {
+      const response: AxiosResponse<LocationListResponse> = await firstValueFrom(
+        this.httpService.get<LocationListResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockRequestList:', error.message);
+      } else {
+        console.error('Error fetching StockRequestList:', error);
+      }
+      throw new Error('Unable to fetch StockRequestList from external API');
+    }
+  }
+
+
+  async getUserLogon(query: UserLogonQueryDto): Promise<ApiUserLogonResponse> {
+
+    let url = '';
+
+    if (query.userid) {
+      url = `${this.trakcareApiUrl}/LogonByTrakcare/${query.userid}/${query.password}`;
+
+    }
+    const { data } = await axios.get<ApiUserLogonResponse>(url);
+    return data;
+  }
+  //#endregion
+
+
 
   //  async findAllDepartments(): Promise<Department[]> {
   //     return this.departmentRepo.find();
@@ -464,13 +846,13 @@ export class StockpickService {
           PickStatusId: item.pickstatusid,
           PickStatus: item.pickstatus ?? '',
           isMedicine: item.ismedicine ?? '',
-          BINNo :''
+          BINNo: ''
         }));
 
         return {
           StockRequestNumberStatus: {
             statusCode: parseInt(existingStockRequest?.pickstatusid ?? '0'),
-            statusDesc: existingStockRequest?.pickstatus ?? 'Pendings.',
+            statusDesc: existingStockRequest?.pickstatus ?? 'Pendingkk',
           },
           StockRequestByReqNoInfo: Result,
         };
@@ -522,8 +904,8 @@ export class StockpickService {
       }));
       return {
         StockRequestNumberStatus: {
-          statusCode: parseInt(existingStockRequest?.pickstatusid ?? '0'),
-          statusDesc: existingStockRequest?.pickstatus ?? 'Pendings',
+          statusCode: parseFloat((10.0).toFixed(5)),//parseFloat(existingStockRequest?.pickstatusid ?? '3.0').toFixed(1),
+          statusDesc: existingStockRequest?.pickstatus ?? 'Pendingdds',
         },
         StockRequestByReqNoInfo: Result,
       };
@@ -532,7 +914,7 @@ export class StockpickService {
       return {
         StockRequestNumberStatus: {
           statusCode: 0,
-          statusDesc: 'Pending',
+          statusDesc: 'Pendingff',
         },
         StockRequestByReqNoInfo: [
           {
@@ -555,7 +937,7 @@ export class StockpickService {
             PickStatusId: 0,
             PickStatus: '',
             isMedicine: '',
-            BINNo:''
+            BINNo: ''
           }
         ],
       };
@@ -593,7 +975,7 @@ export class StockpickService {
         } else {
           console.log('2. next step find item in transaction')
           const xinrqRowId = dto.xINRQRowId ?? '0'
-           await this.stockRequestByReqNoRepo.find({
+          await this.stockRequestByReqNoRepo.find({
             where: {
               inrqrowid: parseInt(xinrqRowId),//parseInt(dto.xINRQRowId || '0'),
               trakcareitemcode: result[0].itemNo2,
@@ -638,8 +1020,8 @@ export class StockpickService {
                 .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
                 .execute();
 
-            }else{
-               await this.stockRequestRepo
+            } else {
+              await this.stockRequestRepo
                 .createQueryBuilder()
                 .update()
                 .set({
@@ -649,25 +1031,25 @@ export class StockpickService {
                 .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
                 .execute();
             }
-          } else { 
-                 await this.stockRequestRepo
-                .createQueryBuilder()
-                .update()
-                .set({
-                  pickstatusid: 2,
-                  pickstatus: 'In Progess',
-                })
-                .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
-                .execute();
+          } else {
+            await this.stockRequestRepo
+              .createQueryBuilder()
+              .update()
+              .set({
+                pickstatusid: 2,
+                pickstatus: 'In Progess',
+              })
+              .where("inrqrowid = :inrqrowid", { inrqrowid: parseInt(dto.xINRQRowId ?? '0') })
+              .execute();
 
           }
         }
-       
+
         return {
           // สมมุติค่าที่ได้จาก logic
           INRQRowId: parseInt(dto.xINRQRowId ?? '0'),
 
-          barcodeText: result[0].barcodeText||'',
+          barcodeText: result[0].barcodeText || '',
           itemNo2: result[0].itemNo2,
           status: 'Completed',
         };
@@ -681,7 +1063,7 @@ export class StockpickService {
       }
 
 
-    } catch  {
+    } catch {
       return {
         INRQRowId: 0,
         barcodeText: '',

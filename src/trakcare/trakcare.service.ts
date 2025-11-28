@@ -5,12 +5,14 @@ import { HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 
 import { firstValueFrom } from 'rxjs';
-
+import { StockTransferListResponse ,StockTransferOrderResponse} from './interfaces/trakcare-transferList-interface';
 import { StockRequestListResponse } from './interfaces/trakcare-requestList-interface';
 import { StockRequestByReqNoResponse} from './interfaces/trakcare-requestByReqNo-interface';
 import { FindStockItemResponse } from './interfaces/trakcare-findstockItemByReqNo-interface';
 import { LocationListResponse } from './interfaces/trakcare-location-interface';
 import { LogOnInfoResponse} from './interfaces/trakcare-logon-interface';
+
+import { StockTransferByLocationQueryDto , StockTransferAllLocationQueryDto} from './dto/stock-transfer-query.dto';
 
 @Injectable()
 export class TrakcareService {
@@ -40,6 +42,112 @@ export class TrakcareService {
       throw new Error('Unable to fetch StockRequestList from external API');
     }
   }
+ //#region StockTransfer 
+  async getStockTransferListAllLocation(query: StockTransferAllLocationQueryDto): Promise<StockTransferListResponse> {
+  
+    const url = `${this.trakcareApiUrl}/StockTransferListAllLocation/${query.dateFrom}/${query.dateTo}`;
+    try {
+      const response: AxiosResponse<StockTransferListResponse> = await firstValueFrom(
+        this.httpService.get<StockTransferListResponse>(url)
+      );
+      console.log(response.data)
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockTransferList all Location:', error.message);
+      } else {
+        console.error('Error fetching StockTransferList all Location:', error);
+      }
+      throw new Error('Unable to fetch StockTransferList all Location from external API');
+    }
+  }
+  async getStockTransferListByLocation(query: StockTransferByLocationQueryDto): Promise<StockTransferListResponse> {
+  
+    const url = `${this.trakcareApiUrl}/StockTransferListByLocation/${query.dateFrom}/${query.dateTo}/${query.locationCode}`;
+    try {
+      const response: AxiosResponse<StockTransferListResponse> = await firstValueFrom(
+        this.httpService.get<StockTransferListResponse>(url)
+      );
+      console.log(response.data)
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockTransferList all Location:', error.message);
+      } else {
+        console.error('Error fetching StockTransferList all Location:', error);
+      }
+      throw new Error('Unable to fetch StockTransferList all Location from external API');
+    }
+  }
+ async getStockTransferByTransferNo(xTransferNumber: string): Promise<StockTransferListResponse> {
+  
+    const url = `${this.trakcareApiUrl}/StockTransferListByTransferNumber/${xTransferNumber}`;
+    try {
+      const response: AxiosResponse<StockTransferListResponse> = await firstValueFrom(
+        this.httpService.get<StockTransferListResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockTransferList all Location:', error.message);
+      } else {
+        console.error('Error fetching StockTransferList all Location:', error);
+      }
+      throw new Error('Unable to fetch StockTransferList all Location from external API');
+    }
+  }
+
+ async getStockTransferOrder (xTransferNumber: string): Promise<StockTransferOrderResponse> {
+  
+    const url = `${this.trakcareApiUrl}/StockTransferOrder/${xTransferNumber}`;
+    try {
+      const response: AxiosResponse<StockTransferOrderResponse> = await firstValueFrom(
+        this.httpService.get<StockTransferOrderResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockTransferList all Location:', error.message);
+      } else {
+        console.error('Error fetching StockTransferList all Location:', error);
+      }
+      throw new Error('Unable to fetch StockTransferList all Location from external API');
+    }
+  }
+async getLocation(): Promise<LocationListResponse> {
+    const url = `${this.trakcareApiUrl}/LocationList/`;
+    try {
+      const response: AxiosResponse<LocationListResponse> = await firstValueFrom(
+        this.httpService.get<LocationListResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockRequestList:', error.message);
+      } else {
+        console.error('Error fetching StockRequestList:', error);
+      }
+      throw new Error('Unable to fetch StockRequestList from external API');
+    }
+  }
+async getStockLocation(): Promise<LocationListResponse> {
+    const url = `${this.trakcareApiUrl}/StockLocationList/`;
+    try {
+      const response: AxiosResponse<LocationListResponse> = await firstValueFrom(
+        this.httpService.get<LocationListResponse>(url)
+      );
+      return response.data;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        console.error('Error fetching StockRequestList:', error.message);
+      } else {
+        console.error('Error fetching StockRequestList:', error);
+      }
+      throw new Error('Unable to fetch StockRequestList from external API');
+    }
+  }
+//#endregion
+
 async getStockRequestListByRequestNumber(xRequestNumber: string): Promise<StockRequestListResponse> {
     const url = `${this.trakcareApiUrl}/StockRequestListByRequestNumber/${xRequestNumber}`;
         try {
@@ -158,22 +266,7 @@ async getStockRequestByReqNo(xINRQRowId: string) {
     return ItemInfo
   }
   */
-   async findLocationList(): Promise<LocationListResponse> {
-    const url = `${this.trakcareApiUrl}/LocationList/`;
-    try {
-      const response: AxiosResponse<LocationListResponse> = await firstValueFrom(
-        this.httpService.get<LocationListResponse>(url)
-      );
-      return response.data;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        console.error('Error fetching StockRequestList:', error.message);
-      } else {
-        console.error('Error fetching StockRequestList:', error);
-      }
-      throw new Error('Unable to fetch StockRequestList from external API');
-    }
-  }
+  
 /*
   async findLocationList3() {
     let response: any;

@@ -1,6 +1,6 @@
 export interface ifaceMatchbarcodeRequestItem {
   INRQRowId?: number;
-  INRQIRowId?: string;
+  //INRQIRowId?: string;
   barcodeText?: string;
   itemNo2?: string;
   status?: string;

@@ -5,5 +5,5 @@ export interface LocationList {
 }
 
 export interface LocationListResponse {
-  LocationInfox: LocationList[];
+  LocationInfo: LocationList[];
 }

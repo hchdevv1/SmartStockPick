@@ -11,16 +11,14 @@ import { BarcodeItem,ItemDetails } from '../mssql/mssql.entity';
 
 import { PostgresModule} from '../postgres/postgres.module';
 import { PostgresService} from '../postgres/postgres.service';
-import { Stockrequest,StrockPickTransactions} from '../postgres/postgres.entity';
-
-
+import { Stockrequest,StrockPickTransactions ,StockTransferEntity ,StockTransferPickEntity} from '../postgres/postgres.entity';
 
 
 @Module({
   imports: [
     HttpModule,
     TypeOrmModule.forFeature([BarcodeItem,ItemDetails], 'mssqlConn'),
-    TypeOrmModule.forFeature([Stockrequest,StrockPickTransactions], 'postgresConn'),
+    TypeOrmModule.forFeature([Stockrequest,StrockPickTransactions ,StockTransferEntity,StockTransferPickEntity], 'postgresConn'),
     MssqlModule,PostgresModule
   ],
   controllers: [StockpickController],
