@@ -29,7 +29,6 @@ export class StockpickController {
     console.log(xTransferNumber)
     return this.stockpickService.getMissingBarcodeByTransferNumber(xTransferNumber);
   }
-
 @Post('stock-transfer/barcodestock-matched')
    barcodestockMatched(@Body('BarcodestockMatched') body: BarcodestockMatchedDto) {
     return this.stockpickService.processBarcodeMatched(body);
