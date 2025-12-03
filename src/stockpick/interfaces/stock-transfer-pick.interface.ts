@@ -18,6 +18,7 @@ export interface StockTransferPickItem {
   BatchExpiryDate: string;
   TransferComplete: string;
   IsMedicine: string;
+  pickqty:string;
 }
 
 export interface ApiStockTransferPickResponse {

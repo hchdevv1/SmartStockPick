@@ -119,6 +119,8 @@ export class StockTransferPickEntity{
     transferqty?: string; 
     @Column({ name: 'requestqty', type: 'text' })
     requestqty?: string; 
+  @Column({ name: 'pickqty', type: 'text' })
+    pickqty?: string; 
     @Column({ name: 'batch', type: 'text' })
     batch?: string; 
     @Column({ name: 'batchexpirydate', type: 'text' })

@@ -5,7 +5,8 @@ import { MatchBarcodeToStockRequestItemDto} from './dto/fetch-matchbarcode-reque
 import { StockTransferQueryDto } from './dto/stock-transfer-query.dto';
 import { BarcodestockMatchedDto } from './dto/barcodestock-matched.dto';
 import { BarcodestockUpdateDto } from './dto/barcodestock-update.dto';
-import { UserLogonQueryDto} from './dto/user-logon.dto'
+import { UserLogonQueryDto} from './dto/user-logon.dto';
+import { PickStatusQueryDto } from './dto/stock-transfer-pick-statusupdate-query.dto';
 @Controller('stockpick')
 export class StockpickController {
   constructor(private readonly stockpickService: StockpickService,
@@ -23,8 +24,9 @@ export class StockpickController {
     return this.stockpickService.processStockTransferPick(xTransferNumber);
   }
 
-  @Get('stock-transfer/no-barcode/:transferNumber')
+  @Get('stock-transfer/no-barcode/:xTransferNumber')
    getNoBarcode(@Param('xTransferNumber') xTransferNumber: string) {
+    console.log(xTransferNumber)
     return this.stockpickService.getMissingBarcodeByTransferNumber(xTransferNumber);
   }
 
@@ -36,7 +38,10 @@ export class StockpickController {
    barcodestockupdate(@Body('BarcodestockUpdate') body: BarcodestockUpdateDto) {
     return  this.stockpickService.updateBarcodestock(body);
   }
-
+@Post('stock-transfer/pick/status-update')
+   pickqtyupdate(@Body('PickStatusQueryDto') body: PickStatusQueryDto) {
+    return this.stockpickService.updatepickstatus(body);
+  }
   @Get('all-location')
    getLocation(){
    // http://localhost:3002/trakcare/stock/transfer/transfer-no/TF67-001433

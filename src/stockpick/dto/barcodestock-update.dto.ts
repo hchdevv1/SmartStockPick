@@ -26,4 +26,7 @@ export class BarcodestockUpdateDto {
   @IsString()
   @IsOptional()
   picktime?: string;
+   @IsString()
+  @IsOptional()
+  pickqty?: string;
 }

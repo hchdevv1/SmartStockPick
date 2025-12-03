@@ -19,4 +19,7 @@ export class BarcodestockMatchedDto {
   @IsString()
   @IsOptional()
   picktime?: string;
+  @IsString()
+  @IsOptional()
+  pickqty?: string;
 }

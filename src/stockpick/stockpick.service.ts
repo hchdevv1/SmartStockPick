@@ -29,6 +29,7 @@ import { BarcodestockUpdateDto } from './dto/barcodestock-update.dto';
 import { LocationListResponse } from './interfaces/location-interface';
 import { UserLogonQueryDto } from './dto/user-logon.dto';
 import { ApiUserLogonResponse } from './interfaces/user-logon.interface';
+import { PickStatusQueryDto } from './dto/stock-transfer-pick-statusupdate-query.dto';
 import axios from 'axios';
 import { AxiosResponse } from 'axios';
 //import { ResultStockRequestByReqNoInfo } from './dto/result-stockrequestItem.dto';
@@ -62,7 +63,7 @@ export class StockpickService {
   //#region stocktransfer
   async processStockTransfers(query: StockTransferQueryDto) {
     const apiResponse = await this.callApi(query);
-    await Promise.all(apiResponse.StockTransferInfo.map(item => this.saveToDatabase(item) ));
+    await Promise.all(apiResponse.StockTransferInfo.map(item => this.saveToDatabase(item)));
     const transferNumbers = apiResponse.StockTransferInfo.map(x => x.INITNo);
     const entityRows = await this.repo.find({
       where: { initno: In(transferNumbers) }
@@ -75,7 +76,7 @@ export class StockpickService {
     }
     const list = apiResponse.StockTransferInfo;
     const mergedList = list.map(item => {
-    const matched = pickMap.get(item.INITNo);
+      const matched = pickMap.get(item.INITNo);
       return {
         Index: item.Index,
         INITRowId: item.INITRowId,
@@ -93,7 +94,7 @@ export class StockpickService {
       };
     });
 
-    return { StockTransferInfo: mergedList};
+    return { StockTransferInfo: mergedList };
   }
   private async callApi(query: StockTransferQueryDto): Promise<ApiStockTransferResponse> {
 
@@ -169,7 +170,8 @@ export class StockpickService {
           batchexpirydate: item.BatchExpiryDate,
           transfercomplete: item.TransferComplete,
           ismedicine: item.IsMedicine,
-          barcodestock: `${barcodeText}`
+          barcodestock: `${barcodeText}`,
+          pickqty: item.pickqty
 
 
         });
@@ -201,6 +203,8 @@ export class StockpickService {
   }
 
   async getMissingBarcodeByTransferNumber(transferNumber: string) {
+
+    console.log(transferNumber)
     const items = await this.stocktransferPickRepo.find({
       select: ['stockitemcode', 'stockitemdesc', 'barcodestock'],
       where: {
@@ -214,7 +218,7 @@ export class StockpickService {
 
   async processBarcodeMatched(dto: BarcodestockMatchedDto) {
 
-    const { transferNo, barcodestock, pickbycode, pickbyname, pickdate, picktime } = dto;
+    const { transferNo, barcodestock, pickbycode, pickbyname, pickdate, picktime ,pickqty} = dto;
 
     let statusmatch = ''
 
@@ -235,6 +239,7 @@ export class StockpickService {
           picktime: picktime,
           pickstatusid: '3',
           pickstatus: 'Done',
+          pickqty:pickqty,
           updated_at: () => 'NOW()',
         },
       );
@@ -246,7 +251,7 @@ export class StockpickService {
     const { count } = await this.stocktransferPickRepo
       .createQueryBuilder('p')
       .where('p.transfernumber = :transferNo', { transferNo })
-      .andWhere('p.ismedicine = :isMed', { isMed: 'Y' })
+      //.andWhere('p.ismedicine = :isMed', { isMed: 'Y' })
       .andWhere('(p.pickstatusid IS NULL OR p.pickstatusid = \'\')')
       .select('COUNT(p.initrowid)', 'count')
       .getRawOne();
@@ -307,6 +312,7 @@ export class StockpickService {
         'pickstatus',
         'pickdate',
         'picktime',
+        'pickqty',
         'ismedicine',
       ],
     });
@@ -375,8 +381,7 @@ export class StockpickService {
   }
 
   async updateBarcodestock(dto: BarcodestockUpdateDto) {
-    const { transfernumber, stockitemcode, barcodestock, pickbycode, pickbyname, pickdate, picktime } = dto;
-    console.log(dto)
+    const { transfernumber, stockitemcode, barcodestock, pickbycode, pickbyname, pickdate, picktime ,pickqty} = dto;
     const itemDetail = await this.itemDetailsRepo.findOne({
       where: { no2: stockitemcode }
     });
@@ -384,7 +389,7 @@ export class StockpickService {
     let updateStatus = '';
     let navNo = '';
     let navNo2 = '';
-
+    
 
     if (itemDetail?.no) {
       navNo = itemDetail.no;     // Nav field
@@ -406,25 +411,116 @@ export class StockpickService {
           picktime: picktime,
           pickstatusid: '3',
           pickstatus: 'Done',
+          pickqty:pickqty,
           updated_at: () => 'NOW()',
         },
       );
-
+ 
     } else {
       updateStatus = 'NOT_FOUND';
     }
-
-    return {
-      UpdateStatus: {
+    const items = await this.stocktransferPickRepo.find({
+      where: { transfernumber: transfernumber },
+      select: [
+        'initrowid',
+        'transfernumber',
+        'inrqrowid',
+        'requestnumber',
+        'initirowid',
+        'initiinclbdr',
+        'stockitemcode',
+        'stockitemdesc',
+        'bin',
+        'uom',
+        'batchqty',
+        'transferqty',
+        'requestqty',
+        'batch',
+        'batchexpirydate',
+        'transfercomplete',
+        'barcodestock',
+        'pickbycode',
+        'pickbyname',
+        'pickstatusid',
+        'pickstatus',
+        'pickdate',
+        'picktime',
+        'pickqty',
+        'ismedicine',
+      ],
+    });
+    const UpdateStatus={
+    
         stockitemcode,
         barcodestock,
         NavNo: navNo ?? '',
         NavNo2: navNo2 ?? '',
         status: updateStatus
-      }
-    };
+      
+    }
+ //
+    return {Status: UpdateStatus, StockTransferInfo: items };
   }
+  async updatepickstatus(dto: PickStatusQueryDto) {
+    let updateStatus = '';
+    const { transferNo, initiinclbdr, pickstatusid, pickstatus } = dto;
+    if ((dto.initiinclbdr) && (dto.pickstatusid) && (dto.transferNo)) {
+      await this.stocktransferPickRepo.update(
+        { transfernumber: transferNo, initiinclbdr: initiinclbdr },
+        {
 
+          pickstatusid: pickstatusid,
+          pickstatus: pickstatus,
+          updated_at: () => 'NOW()',
+        },
+      );
+     /* const itemDetail = await this.itemDetailsRepo.findOne({
+        where: { transfernumber: transferNo, initiinclbdr: initiinclbdr }
+      });*/
+      updateStatus = 'SUCCESS';
+    } else {
+      updateStatus = 'NOT_FOUND';
+    }
+  const items = await this.stocktransferPickRepo.find({
+      where: { transfernumber: transferNo },
+      select: [
+        'initrowid',
+        'transfernumber',
+        'inrqrowid',
+        'requestnumber',
+        'initirowid',
+        'initiinclbdr',
+        'stockitemcode',
+        'stockitemdesc',
+        'bin',
+        'uom',
+        'batchqty',
+        'transferqty',
+        'requestqty',
+        'batch',
+        'batchexpirydate',
+        'transfercomplete',
+        'barcodestock',
+        'pickbycode',
+        'pickbyname',
+        'pickstatusid',
+        'pickstatus',
+        'pickdate',
+        'picktime',
+        'pickqty',
+        'ismedicine',
+      ],
+    });
+  const UpdateStatus={
+    transfernumber: transferNo,
+        initiinclbdr: initiinclbdr,
+        pickstatusid: pickstatusid,
+        pickstatus: pickstatus,
+        status: updateStatus
+      
+    }
+    return {Status: UpdateStatus, StockTransferInfo: items };
+  }
   async getLocation(): Promise<LocationListResponse> {
     const url = `${this.trakcareApiUrl}/LocationList/`;
     try {
