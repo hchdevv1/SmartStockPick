@@ -29,7 +29,6 @@ import { BarcodestockUpdateDto } from './dto/barcodestock-update.dto';
 import { LocationListResponse } from './interfaces/location-interface';
 import { UserLogonQueryDto } from './dto/user-logon.dto';
 import { ApiUserLogonResponse } from './interfaces/user-logon.interface';
-
 import axios from 'axios';
 import { AxiosResponse } from 'axios';
 //import { ResultStockRequestByReqNoInfo } from './dto/result-stockrequestItem.dto';
@@ -63,12 +62,38 @@ export class StockpickService {
   //#region stocktransfer
   async processStockTransfers(query: StockTransferQueryDto) {
     const apiResponse = await this.callApi(query);
-
-    for (const item of apiResponse.StockTransferInfo) {
-      await this.saveToDatabase(item);
+    await Promise.all(apiResponse.StockTransferInfo.map(item => this.saveToDatabase(item) ));
+    const transferNumbers = apiResponse.StockTransferInfo.map(x => x.INITNo);
+    const entityRows = await this.repo.find({
+      where: { initno: In(transferNumbers) }
+    });
+    const pickMap = new Map<string, StockTransferEntity>();
+    for (const row of entityRows) {
+      if (row.initno) {
+        pickMap.set(row.initno, row);
+      }
     }
+    const list = apiResponse.StockTransferInfo;
+    const mergedList = list.map(item => {
+    const matched = pickMap.get(item.INITNo);
+      return {
+        Index: item.Index,
+        INITRowId: item.INITRowId,
+        INITNo: item.INITNo,
+        INRQRowId: item.INRQRowId,
+        INRQNo: item.INRQNo,
+        RequestingLocationCode: item.RequestingLocationCode,
+        RequestingLocationDesc: item.RequestingLocationDesc,
+        SupplyingLocationCode: item.SupplyingLocationCode,
+        SupplyingLocationDesc: item.SupplyingLocationDesc,
+        INITDate: item.INITDate,
+        TransferComplete: item.TransferComplete,
+        pickstatusid: matched?.pickstatusid ?? '',
+        pickstatus: matched?.pickstatus ?? ''
+      };
+    });
 
-    return apiResponse;
+    return { StockTransferInfo: mergedList};
   }
   private async callApi(query: StockTransferQueryDto): Promise<ApiStockTransferResponse> {
 
@@ -105,6 +130,10 @@ export class StockpickService {
       supplylocdesc: apiItem.SupplyingLocationDesc,
       initdate: apiItem.INITDate,
       pickcompleted: apiItem.TransferComplete,
+      pickstatusid: 1,
+      pickstatus: 'Pending'
+
+
     });
 
     await this.repo.save(entity);
@@ -122,7 +151,7 @@ export class StockpickService {
         where: { transfernumber: item.TransferNumber, initirowid: item.INITIRowId },
       });
       if (!existing) {
-        const entity = this.stocktransferPickRepo.create([{
+        const entity = this.stocktransferPickRepo.create({
           initrowid: item.INITRowId,
           transfernumber: item.TransferNumber,
           inrqrowid: item.INRQRowId,
@@ -143,7 +172,7 @@ export class StockpickService {
           barcodestock: `${barcodeText}`
 
 
-        }]);
+        });
         if (item.INITRowId) {
           await this.stocktransferPickRepo.save(entity);
         }
@@ -187,7 +216,7 @@ export class StockpickService {
 
     const { transferNo, barcodestock, pickbycode, pickbyname, pickdate, picktime } = dto;
 
-    let statusmatch =''
+    let statusmatch = ''
 
     const existing = await this.stocktransferPickRepo.findOne({
       where: { transfernumber: transferNo, barcodestock: barcodestock }
@@ -195,7 +224,7 @@ export class StockpickService {
     });
     console.log(dto)
     if (existing) {
-      statusmatch='Complete'
+      statusmatch = 'Completed'
       // 2️⃣ Update record ที่ match
       await this.stocktransferPickRepo.update(
         { transfernumber: transferNo, barcodestock: barcodestock },
@@ -210,8 +239,8 @@ export class StockpickService {
         },
       );
 
-    }else{
-       statusmatch='Not found'
+    } else {
+      statusmatch = 'Not found'
     }
 
     const { count } = await this.stocktransferPickRepo
@@ -239,6 +268,15 @@ export class StockpickService {
           pickstatusid: '3',
           pickstatus: 'Done',
           updated_at: () => 'NOW()',
+        },
+      );
+    } else {
+      await this.repo.update(
+        { initno: transferNo },
+        {
+          pickstatusid: '2',
+          pickstatus: 'In Progess',
+
         },
       );
     }
@@ -333,45 +371,59 @@ export class StockpickService {
     });
     */
 
-    return { Status:statusmatch, StockTransferInfo: items };
+    return { Status: statusmatch, StockTransferInfo: items };
   }
 
-async updateBarcodestock(dto: BarcodestockUpdateDto) {
-  const { transfernumber,stockitemcode, barcodestock } = dto;
-  console.log(dto)
-  const itemDetail = await this.itemDetailsRepo.findOne({
-    where: { no2: stockitemcode }
-  });
+  async updateBarcodestock(dto: BarcodestockUpdateDto) {
+    const { transfernumber, stockitemcode, barcodestock, pickbycode, pickbyname, pickdate, picktime } = dto;
+    console.log(dto)
+    const itemDetail = await this.itemDetailsRepo.findOne({
+      where: { no2: stockitemcode }
+    });
 
-  let updateStatus = '';
-  let navNo = '';
-  let navNo2 = '';
+    let updateStatus = '';
+    let navNo = '';
+    let navNo2 = '';
 
-  
-  if (itemDetail?.no) {
-    navNo = itemDetail.no;     // Nav field
-    navNo2 = itemDetail.no2??'';   // Nav2 field
 
-    await this.barcodeRepo.update(
-      { no: itemDetail.no },
-      { barcodeText: barcodestock }
-    );
+    if (itemDetail?.no) {
+      navNo = itemDetail.no;     // Nav field
+      navNo2 = itemDetail.no2 ?? '';   // Nav2 field
 
-    updateStatus = 'SUCCESS';
-  } else {
-    updateStatus = 'NOT_FOUND';
-  }
+      await this.barcodeRepo.update(
+        { no: itemDetail.no },
+        { barcodeText: barcodestock }
+      );
 
-  return {
-    UpdateStatus: {
-      stockitemcode,
-      barcodestock,
-      NavNo: navNo ?? '',
-      NavNo2: navNo2 ?? '',
-      status: updateStatus
+      updateStatus = 'SUCCESS';
+      await this.stocktransferPickRepo.update(
+        { transfernumber: transfernumber, stockitemcode: stockitemcode },
+        {
+          barcodestock: barcodestock,
+          pickbycode: pickbycode,
+          pickbyname: pickbyname,
+          pickdate: pickdate,
+          picktime: picktime,
+          pickstatusid: '3',
+          pickstatus: 'Done',
+          updated_at: () => 'NOW()',
+        },
+      );
+
+    } else {
+      updateStatus = 'NOT_FOUND';
     }
-  };
-}
+
+    return {
+      UpdateStatus: {
+        stockitemcode,
+        barcodestock,
+        NavNo: navNo ?? '',
+        NavNo2: navNo2 ?? '',
+        status: updateStatus
+      }
+    };
+  }
 
   async getLocation(): Promise<LocationListResponse> {
     const url = `${this.trakcareApiUrl}/LocationList/`;
@@ -405,8 +457,6 @@ async updateBarcodestock(dto: BarcodestockUpdateDto) {
       throw new Error('Unable to fetch StockRequestList from external API');
     }
   }
-
-
   async getUserLogon(query: UserLogonQueryDto): Promise<ApiUserLogonResponse> {
 
     let url = '';

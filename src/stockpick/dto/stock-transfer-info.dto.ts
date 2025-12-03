@@ -1,4 +1,4 @@
-export interface ApiStockTransfer {
+export interface StockTransferInfoDto {
   Index: number;
   INITRowId: string;
   INITNo: string;
@@ -10,9 +10,10 @@ export interface ApiStockTransfer {
   SupplyingLocationDesc: string;
   INITDate: string;
   TransferComplete: string;
-  AAA:string
+  pickstatusid?: string;
+  pickstatus?: string;
 }
 
-export interface ApiStockTransferResponse {
-  StockTransferInfo: ApiStockTransfer[];
+export interface StockTransferInfoResponse {
+  StockTransferInfo: StockTransferInfoDto[];
 }
